@@ -7,11 +7,25 @@ uses
    uCEFTypes, uCEFMiscFunctions;
 
 const
-   cChromiumSubFolder = 'Chromium100.0';
+   cChromiumSubFolder = 'Chromium101.0';
    cDLLSubfolder = 'Libraries';
 
 type
-   TSnapshotOutputFormat = ( sofUnknown, sofBMP, sofJPG, sofPNG, sofPDF, sofPrinter );
+   TSnapshotOutputFormat = (
+      sofUnknown,    // format not et
+      sofBMP,        // Windows BMP
+      sofJPG,        // JPEG
+      sofPNG,        // PNG
+      sofPDF,        // PDF
+      sofPrinter,    // sent to printer
+      sofTXT         // Text, affected by TSnapshotTextSource
+   );
+
+   TSnapshotTextSource = (
+      stsText,
+      stsHTML,
+      stsConsole
+   );
 
    TSnapshotParameters = record
       ErrorText : String;        // if not empty, parsing ended up with errors
@@ -26,6 +40,8 @@ type
       PNGCompressionLevel : Integer;
       PDFOptions : TCefPdfPrintSettings;
       PDFTitle, PDFURL : String;
+      TextSource : TSnapshotTextSource;
+      TextFrame : String;
       JavaScript : String;
       Cookies : array of String;
       IgnoreCertificateErrors : Boolean;
@@ -33,6 +49,8 @@ type
       Print : Boolean;
 
       procedure SaveBitmap(bmp : TBitmap);
+      function SaveText(const txt : String) : Boolean;
+
       function URLSchemeDomain : String;
    end;
 
@@ -46,7 +64,14 @@ implementation
 // ------------------------------------------------------------------
 // ------------------------------------------------------------------
 
-uses LibTurboJPEG, Vcl.Imaging.pngimage, System.StrUtils;
+uses LibTurboJPEG, Vcl.Imaging.pngimage, System.StrUtils, System.IOUtils;
+
+// SaveText
+//
+      function SaveText(const txt : String) : Boolean;
+begin
+
+end;
 
 const
    cHelp = 'cefHtmlSnaphot utility v0.7.100 - Html to image or pdf coversion using Chromium Embedded Framework'#10
@@ -56,7 +81,8 @@ const
          + '  -?, -h, --help    This inline documentation'#10
          + '  url_or_file       URL of the website or file to be snapshotted (required)'#10
          + '                    If a .url file is specified, the URL will be read from it'#10
-         + '  output_file       Output file pathname, extension determines format (default snapshot.bmp)'#10
+         + '  output_file       Output file pathname, extension determines format (default snapshot.jpg)'#10
+         + '                    Supported formats are pdf, jpg, png, bmp, htm & txt.'#10
          + '                    If the printing mode is enabled, this is the name of the printer.'#10
          + #10
          + '  -w, --width       Width of the snapshot, between 1 and 2048 (default 1024)'#10
@@ -89,6 +115,12 @@ const
          + '        backgrounds     enable backgrounds (1) or not (default, 0)'#10
          + #10
          + '  --print           If this option 1 then output_file is the name of a printer (by default 0)'#10
+         + #10
+         + '  --text            Specifies the source of text for .txt output, accepted values'#10
+         + '                        text (default)'#10
+         + '                        html'#10
+         + '                        console'#10
+         + '  --frame           Specifies the name of the frame for text our html output (by default main frame)'#10
          ;
 
 // ParseCommandLineParameters
@@ -129,7 +161,7 @@ begin
       Exit;
    end;
 
-   Result.OutputFormat := sofBMP; // TODO
+   Result.OutputFormat := sofJPG;  // JPEG by default
    Result.Width  := 1024;
    Result.Height := 768;
    Result.Scale := 1.0;
@@ -181,7 +213,13 @@ begin
    else if ext = '.png' then
       Result.OutputFormat := sofPNG
    else if ext = '.pdf' then
-      Result.OutputFormat := sofPDF;
+      Result.OutputFormat := sofPDF
+   else if ext = '.txt' then
+      Result.OutputFormat := sofTXT
+   else if ext = '.htm' then begin
+      Result.OutputFormat := sofTXT;
+      Result.TextSource := stsHTML;
+   end;
 
    // parse arguments in between
 
@@ -262,6 +300,16 @@ begin
                Result.OutputFormat := sofPrinter;
             end else if p <> '0' then
                Result.ErrorText := 'Unsupported option "' + p + '" for print';
+         end else if lastP = '-text' then begin
+            if p = 'text' then
+               Result.TextSource := stsText
+            else if p = 'html' then
+               Result.TextSource := stsHTML
+            else if p = 'console' then
+               Result.TextSource := stsConsole
+            else Result.ErrorText := 'Unsupported option "' + p + '" for text';
+         end else if lastP = '-frame' then begin
+            Result.TextFrame := p;
          end else begin
             Result.ErrorText := 'Unsupported parameter "' + p + '"';
          end;
@@ -345,6 +393,18 @@ begin
       sofBMP : bmp.SaveToFile(OutputFilePath);
       sofJPG : SaveBitmapToJPEG(bmp, OutputFilePath, JPEGQuality);
       sofPNG : SaveBitmapToPNG(bmp, OutputFilePath, PNGCompressionLevel);
+   end;
+end;
+
+// SaveText
+//
+function TSnapshotParameters.SaveText(const txt : String) : Boolean;
+begin
+   try
+      TFile.WriteAllText(OutputFilePath, txt);
+      Result := True;
+   except
+      Result := False;
    end;
 end;
 
